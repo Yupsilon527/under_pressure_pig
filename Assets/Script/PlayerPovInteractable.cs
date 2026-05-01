@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class PlayerPovInteractable : MonoBehaviour
+public abstract class PlayerPovInteractable : MonoBehaviour
 {
     public virtual void OnInteractionBegin(Vector3 point)
     {
@@ -14,4 +14,6 @@ public class PlayerPovInteractable : MonoBehaviour
     {
         Debug.Log($"Player no longer interacts with {name}");
     }
+    public abstract float GetValueNormalizedFloat(float min, float max);
+    public abstract int GetValueNormalizedInt(int min, int max);
 }

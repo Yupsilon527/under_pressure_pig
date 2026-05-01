@@ -186,7 +186,7 @@ GameObject:
   - component: {fileID: 7550763874622587261}
   - component: {fileID: 7493393937612968085}
   - component: {fileID: 1917955209261602696}
-  - component: {fileID: 5398365021200962777}
+  - component: {fileID: 1314281726416966456}
   m_Layer: 0
   m_Name: Cylinder
   m_TagString: Untagged
@@ -312,7 +312,7 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 126
   m_CollisionDetection: 0
---- !u!114 &5398365021200962777
+--- !u!114 &1314281726416966456
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -332,7 +332,7 @@ MonoBehaviour:
   startAngle: 0
   grabSampleRadius: 0.2
   minGrabRadius: 0.02
-  leverMode: 0
+  leverMode: 1
   snapPositions: 3
   snapSpeed: 180
   onLeverChanged:

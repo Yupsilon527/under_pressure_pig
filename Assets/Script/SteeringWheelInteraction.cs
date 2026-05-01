@@ -1,128 +1,117 @@
 using UnityEngine;
+using UnityEngine.Events;
 
 /// <summary>
-/// First-Person Steering Wheel Interaction — Grab-Point Tracking
+/// First-Person Steering Wheel — Grab-Point Tracking with three modes.
 ///
-/// Instead of mapping raw mouse delta to rotation, this version:
-///   1. On click, records the exact point on the wheel rim that was hit (in wheel-local space).
-///   2. Each frame, projects the camera ray onto the wheel's plane to find where the mouse
-///      is now pointing on that plane.
-///   3. Rotates the wheel so that the originally-grabbed point chases the current mouse point.
+/// Modes:
+///   Drive  — clamped ±maxRotation, springs back to centre on release (steering wheel).
+///   Valve  — clamped 0–valveTurns full rotations, no spring (tap / pipe valve).
+///   Free   — unclamped, spins endlessly, no spring (ship's wheel, combination lock).
 ///
-/// This feels like actually gripping the rim and pulling it — the wheel follows your hand.
-///
-/// Setup:
-///   1. Attach to the steering wheel root GameObject (needs a Collider).
-///   2. Assign 'wheelMesh'        — the child Transform that visually spins.
-///   3. Assign 'playerCamera'     — your FP camera (or leave null for Camera.main).
-///   4. Assign 'cameraLookScript' — your MouseLook component, paused while grabbing.
-///   5. 'wheelNormal' should match the axis facing the player
-///      (default Vector3.forward / Z — the wheel face points toward the driver).
+/// Interaction:
+///   On click the exact rim point is recorded. Each drag frame the camera ray is projected
+///   onto the wheel's face plane; the wheel rotates so the grabbed point follows the mouse.
 /// </summary>
 public class SteeringWheelInteraction : PlayerPovInteractable
 {
+    // ── Modes ─────────────────────────────────────────────────────────────────
+    public enum WheelMode { Drive, Valve, Free }
+
     // ── Inspector ─────────────────────────────────────────────────────────────
     [Header("References")]
     [Tooltip("Child Transform that visually rotates (the rim/spoke mesh).")]
     public Transform wheelMesh;
 
     [Header("Wheel")]
-    [Tooltip("Local axis that points toward the player (the wheel's face normal). " +
-             "Default Vector3.forward works for a wheel whose +Z faces the driver.")]
+    [Tooltip("Local axis pointing toward the player (wheel face normal). " +
+             "Vector3.forward = +Z faces driver.")]
     public Vector3 wheelNormal = Vector3.forward;
 
-    [Tooltip("Maximum rotation in either direction (degrees). 450 = 1.25 full turns.")]
-    public float maxRotation = 450f;
-
-    [Tooltip("How fast the wheel returns to centre when released (deg/sec). 0 = no spring.")]
-    public float returnSpeed = 90f;
-
     [Tooltip("Minimum distance from wheel centre a grab point must be (world units). " +
-             "Prevents jitter when clicking very near the centre.")]
+             "Prevents jitter when clicking near the hub.")]
     public float minGrabRadius = 0.05f;
 
+    [Header("Mode")]
+    public WheelMode wheelMode = WheelMode.Drive;
+
+    [Header("Drive mode")]
+    [Tooltip("Max rotation in either direction (degrees). 450 = 1.25 full turns each way.")]
+    public float maxRotation = 450f;
+
+    [Tooltip("Deg/sec the wheel springs back to centre when released. 0 = no spring.")]
+    public float returnSpeed = 90f;
+
+    [Header("Valve mode")]
+    [Tooltip("How many full turns the valve travels from fully-closed (0) to fully-open (1).")]
+    public float valveTurns = 3f;
+
+    [Header("Events")]
+    [Tooltip("Fires whenever the angle changes. " +
+             "Drive → [-1, 1]  |  Valve → [0, 1]  |  Free → unbounded degrees.")]
+    public UnityEvent<float> onValueChanged;
+
     // ── Public read-outs ──────────────────────────────────────────────────────
-    /// <summary>Accumulated rotation in degrees. Positive = clockwise viewed from driver.</summary>
+    /// <summary>
+    /// Raw accumulated rotation in degrees.
+    /// Drive:  clamped to [-maxRotation, +maxRotation].
+    /// Valve:  clamped to [0, valveTurns * 360].
+    /// Free:   unclamped.
+    /// </summary>
     public float CurrentAngle { get; private set; }
-    public float DesiredAngle { get; private set; }
 
-    /// <summary>Normalised steering in [-1, 1].</summary>
-    public float NormalizedAngle => Mathf.Clamp(CurrentAngle / maxRotation, -1f, 1f);
+    /// <summary>
+    /// Normalised output value.
+    /// Drive → [-1, 1]   Valve → [0, 1]   Free → CurrentAngle (raw degrees).
+    /// </summary>
+    public float NormalizedValue
+    {
+        get
+        {
+            switch (wheelMode)
+            {
+                case WheelMode.Drive: return Mathf.Clamp(CurrentAngle / maxRotation, -1f, 1f);
+                case WheelMode.Valve: return Mathf.Clamp01(CurrentAngle / (valveTurns * 360f));
+                default: return CurrentAngle; // Free — caller decides meaning
+            }
+        }
+    }
 
-    /// <summary>True while the player is holding the wheel.</summary>
     public bool IsHeld { get; private set; }
 
     // ── Private state ─────────────────────────────────────────────────────────
-    private bool _lookingAtWheel;
-
-    // Direction from wheel centre to the grabbed point, in the wheel's local 2-D space,
-    // expressed BEFORE any rotation is applied (i.e. at CurrentAngle = 0).
-    // We store this once at grab time; every frame we compute the signed angle between
-    // this stored direction and where the mouse is now pointing, then add that to _angleAtGrab.
+    // Grab direction stored in the wheel's "rest frame" (un-rotated by CurrentAngle).
     private Vector2 _grabbedLocalDir;
 
-    // CurrentAngle at the moment the player clicked. The per-frame delta is added on top.
+    // CurrentAngle frozen at grab time; delta is added on top each frame.
     private float _angleAtGrab;
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
     private void Awake()
     {
-
         if (wheelMesh == null)
             wheelMesh = transform;
 
         if (GetComponent<Collider>() == null)
-            Debug.LogWarning("[SteeringWheel] No Collider found — add one so the raycast can detect it.", this);
+            Debug.LogWarning("[SteeringWheel] No Collider — add one so the raycast can detect it.", this);
+
+        // Valve starts fully closed (angle = 0) which is already the default.
     }
 
     private void Update()
     {
-        if (!IsHeld)
+        if (!IsHeld && wheelMode == WheelMode.Drive)
             HandleSpringReturn();
 
         ApplyVisualRotation();
     }
 
-    // ── Hover / grab detection ────────────────────────────────────────────────
-
+    // ── PlayerPovInteractable overrides ───────────────────────────────────────
     public override void OnInteractionBegin(Vector3 point)
     {
         base.OnInteractionBegin(point);
-        TryStartGrab(point);
-    }
-    public override void OnInteractionEnd()
-    {
-        base.OnInteractionEnd();
-        StopGrab();
-    }
 
-    // ── Held update ───────────────────────────────────────────────────────────
-    public override void OnInteractionDrag(Ray ray)
-    {
-        base.OnInteractionDrag(ray);
-
-        if (!RaycastWheelPlane(ray, out Vector3 mouseWorldPoint))
-            return;
-
-        Vector2 mouseLocalDir = WorldPointToWheelLocal(mouseWorldPoint);
-        if (mouseLocalDir.magnitude < minGrabRadius)
-            return;
-
-        mouseLocalDir = mouseLocalDir.normalized;
-        Vector2 mouseInRestFrame = Rotate2D(mouseLocalDir, -_angleAtGrab);
-        float angleDelta = Vector2.SignedAngle(_grabbedLocalDir, mouseInRestFrame);
-        CurrentAngle = Mathf.Clamp(CurrentAngle + angleDelta, -maxRotation, maxRotation);
-
-        Debug.Log($"Rotate from {CurrentAngle - angleDelta} by {angleDelta} degrees to {CurrentAngle}");
-    }
-
-    // ── Grab start ────────────────────────────────────────────────────────────
-    private void TryStartGrab(Vector3 hitWorldPoint)
-    {
-        // Convert the hit point to the wheel's 2-D plane, then UN-rotate it so that
-        // _grabbedLocalDir is relative to angle = 0. This means we don't need to
-        // subtract the current rotation each frame — we just compare angles directly.
-        Vector2 rawLocalDir = WorldPointToWheelLocal(hitWorldPoint);
+        Vector2 rawLocalDir = WorldPointToWheelLocal(point);
 
         if (rawLocalDir.magnitude < minGrabRadius)
         {
@@ -130,23 +119,67 @@ public class SteeringWheelInteraction : PlayerPovInteractable
             return;
         }
 
-        // Un-rotate by CurrentAngle so the stored direction is in the "rest" frame.
+        // Store in the rest frame so we don't need to compensate for CurrentAngle each frame.
         _grabbedLocalDir = Rotate2D(rawLocalDir.normalized, -CurrentAngle);
         _angleAtGrab = CurrentAngle;
-
         IsHeld = true;
     }
 
-    private void StopGrab()
+    public override void OnInteractionEnd()
     {
+        base.OnInteractionEnd();
         IsHeld = false;
     }
 
-    // ── Spring return ─────────────────────────────────────────────────────────
+    public override void OnInteractionDrag(Ray ray)
+    {
+        base.OnInteractionDrag(ray);
+
+        if (!IsHeld) return;
+
+        if (!RaycastWheelPlane(ray, out Vector3 mouseWorldPoint))
+            return;
+
+        Vector2 mouseLocalDir = WorldPointToWheelLocal(mouseWorldPoint);
+
+        if (mouseLocalDir.magnitude < minGrabRadius)
+            return;
+
+        mouseLocalDir = mouseLocalDir.normalized;
+
+        // Un-rotate mouse dir into rest frame, then take the signed angle from
+        // the stored grab direction. This gives the TOTAL delta from grab — not
+        // incremental — so we SET rather than ADD to avoid compounding.
+        Vector2 mouseInRestFrame = Rotate2D(mouseLocalDir, -_angleAtGrab);
+        float delta = Vector2.SignedAngle(_grabbedLocalDir, mouseInRestFrame);
+        float desired = _angleAtGrab - delta;
+
+        float prev = CurrentAngle;
+        CurrentAngle = ApplyModeClamp(desired);
+
+        if (!Mathf.Approximately(CurrentAngle, prev))
+            onValueChanged?.Invoke(NormalizedValue);
+    }
+
+    // ── Mode clamping ─────────────────────────────────────────────────────────
+    private float ApplyModeClamp(float angle)
+    {
+        switch (wheelMode)
+        {
+            case WheelMode.Drive: return Mathf.Clamp(angle, -maxRotation, maxRotation);
+            case WheelMode.Valve: return Mathf.Clamp(angle, 0f, valveTurns * 360f);
+            default: return angle; // Free — no clamp
+        }
+    }
+
+    // ── Spring return (Drive only) ────────────────────────────────────────────
     private void HandleSpringReturn()
     {
         if (returnSpeed <= 0f || Mathf.Approximately(CurrentAngle, 0f)) return;
+        float prev = CurrentAngle;
         CurrentAngle = Mathf.MoveTowards(CurrentAngle, 0f, returnSpeed * Time.deltaTime);
+        if (!Mathf.Approximately(CurrentAngle, prev))
+            onValueChanged?.Invoke(NormalizedValue);
     }
 
     // ── Visual ────────────────────────────────────────────────────────────────
@@ -155,12 +188,56 @@ public class SteeringWheelInteraction : PlayerPovInteractable
         wheelMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, wheelNormal);
     }
 
-    // ── Geometry helpers ──────────────────────────────────────────────────────
+    // ── Public API ────────────────────────────────────────────────────────────
+    /// <summary>Set the wheel to a normalised value [0,1] from code (Drive and Valve).</summary>
+    public void SetNormalizedValue(float t)
+    {
+        t = Mathf.Clamp01(t);
+        switch (wheelMode)
+        {
+            case WheelMode.Drive: CurrentAngle = Mathf.Lerp(-maxRotation, maxRotation, t); break;
+            case WheelMode.Valve: CurrentAngle = t * valveTurns * 360f; break;
+                // Free: no sensible normalised mapping — use SetAngle instead.
+        }
+        ApplyVisualRotation();
+    }
+
+    /// <summary>Set the wheel to an exact angle in degrees from code.</summary>
+    public void SetAngle(float degrees)
+    {
+        CurrentAngle = ApplyModeClamp(degrees);
+        ApplyVisualRotation();
+    }
 
     /// <summary>
-    /// Intersects a world-space ray with the wheel's face plane.
-    /// Returns false if the ray is (nearly) parallel to the plane.
+    /// Returns the current value as a float in a caller-defined range.
+    /// Drive:  maps [-1, 1]  → [min, max]
+    /// Valve:  maps [0,  1]  → [min, max]
+    /// Free:   maps CurrentAngle directly into [min, max] unclamped
     /// </summary>
+    public override float GetValueNormalizedFloat(float min, float max)
+    {
+        switch (wheelMode)
+        {
+            case WheelMode.Drive: return Mathf.Lerp(min, max, NormalizedValue * 0.5f + 0.5f); // remap [-1,1]→[0,1] first
+            case WheelMode.Valve: return Mathf.Lerp(min, max, NormalizedValue);
+            default: return Mathf.Lerp(min, max, CurrentAngle);                   // Free — caller interprets
+        }
+    }
+
+    /// <summary>
+    /// Returns the current value snapped to the nearest integer step in [min, max] (inclusive).
+    /// E.g. GetValueNormalizedInt(0, 5) on a Valve wheel returns 0, 1, 2, 3, 4, or 5.
+    /// Drive uses the full [-1, 1] → [min, max] mapping (min should usually be negative).
+    /// Free maps CurrentAngle linearly; min/max define the range endpoints.
+    /// </summary>
+    public override int GetValueNormalizedInt(int min, int max)
+    {
+        float f = GetValueNormalizedFloat(min, max);
+        return Mathf.Clamp(Mathf.RoundToInt(f), min, max);
+    }
+
+    // ── Geometry helpers ──────────────────────────────────────────────────────
     private bool RaycastWheelPlane(Ray ray, out Vector3 hitPoint)
     {
         hitPoint = Vector3.zero;
@@ -205,18 +282,14 @@ public class SteeringWheelInteraction : PlayerPovInteractable
     // ── Editor gizmos ─────────────────────────────────────────────────────────
     private void OnDrawGizmosSelected()
     {
+        if (wheelMesh == null) return;
 
-        if (wheelMesh != null)
-        {
-            // Show the face normal
-            Gizmos.color = Color.yellow;
-            Vector3 faceDir = wheelMesh.TransformDirection(wheelNormal).normalized;
-            Gizmos.DrawLine(wheelMesh.position, wheelMesh.position + faceDir * 0.35f);
-            Gizmos.DrawSphere(wheelMesh.position + faceDir * 0.35f, 0.02f);
+        Gizmos.color = Color.yellow;
+        Vector3 faceDir = wheelMesh.TransformDirection(wheelNormal).normalized;
+        Gizmos.DrawLine(wheelMesh.position, wheelMesh.position + faceDir * 0.35f);
+        Gizmos.DrawSphere(wheelMesh.position + faceDir * 0.35f, 0.02f);
 
-            // Show minGrabRadius dead-zone
-            Gizmos.color = new Color(1f, 0.3f, 0.3f, 0.4f);
-            Gizmos.DrawWireSphere(wheelMesh.position, minGrabRadius);
-        }
+        Gizmos.color = new Color(1f, 0.3f, 0.3f, 0.4f);
+        Gizmos.DrawWireSphere(wheelMesh.position, minGrabRadius);
     }
 }

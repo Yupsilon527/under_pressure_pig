@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class DraggedInteractable : PlayerPovInteractable
+public abstract class DraggedInteractable : PlayerPovInteractable
 {
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()

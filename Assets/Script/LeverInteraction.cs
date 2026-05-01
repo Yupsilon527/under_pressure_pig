@@ -255,6 +255,26 @@ public class LeverInteraction : PlayerPovInteractable
         _targetAngle = leverMode == LeverMode.Snap ? NearestSnapAngle(angle) : angle;
     }
 
+    /// <summary>
+    /// Returns the current lever position mapped to a float in [min, max].
+    /// The lever's NormalizedValue [0, 1] is remapped into your range.
+    /// E.g. GetValueNormalizedFloat(0f, 100f) gives a percentage.
+    /// </summary>
+    public override float GetValueNormalizedFloat(float min, float max)
+    {
+        return Mathf.Lerp(min, max, NormalizedValue);
+    }
+
+    /// <summary>
+    /// Returns the current lever position snapped to the nearest integer in [min, max] (inclusive).
+    /// E.g. GetValueNormalizedInt(1, 5) on a Snap lever with 5 positions returns 1, 2, 3, 4, or 5.
+    /// </summary>
+    public override int GetValueNormalizedInt(int min, int max)
+    {
+        float f = GetValueNormalizedFloat(min, max);
+        return Mathf.Clamp(Mathf.RoundToInt(f), min, max);
+    }
+
     // ── Editor gizmos ─────────────────────────────────────────────────────────
     private void OnDrawGizmosSelected()
     {
