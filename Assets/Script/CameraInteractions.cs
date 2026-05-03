@@ -4,7 +4,6 @@ using UnityEngine.InputSystem;
 public class CameraInteractions : MonoBehaviour
 {
 
-    [Tooltip("Max raycast distance to register 'looking at wheel'.")]
     public float interactDistance = 2.5f;
     public Camera camera;
     bool fireRay = false;
@@ -60,7 +59,6 @@ public class CameraInteractions : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
-    // ── Editor gizmo ─────────────────────────────────────────────────────────
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.cyan;
