@@ -5,16 +5,13 @@ public class LeverInteraction : DragInteractable
 {
     public enum LeverMode { FreeSlide, Snap, Toggle }
 
-    public Transform leverMesh;
-
-    public Vector3 pivotAxis = Vector3.right;
+    public float sensitivity = 10;
 
     public Vector3 dragPlaneAxis = Vector3.up;
 
 
     public float grabSampleRadius = 0.2f;
 
-    public float minGrabRadius = 0.02f;
 
     public LeverMode leverMode = LeverMode.FreeSlide;
 
@@ -23,18 +20,16 @@ public class LeverInteraction : DragInteractable
 
     public float NormalizedValue => Mathf.InverseLerp(-maxRotation, maxRotation, CurrentAngle);
 
-    private float _targetAngle;
     private bool _atMinLast;
     private bool _atMaxLast;
 
     private float _grabbedA;      // projection onto dragPlaneAxis at grab time
     private float _grabbedB;      // projection onto the perpendicular axis at grab time
-    private float _angleAtGrab;
 
     private void Awake()
     {
-        if (leverMesh == null)
-            leverMesh = transform;
+        if (objectMesh == null)
+            objectMesh = transform;
 
         if (GetComponent<Collider>() == null)
             Debug.LogWarning("[LeverInteraction] No Collider — add one for raycast detection.", this);
@@ -62,10 +57,10 @@ public class LeverInteraction : DragInteractable
             return;
         }
 
-        Vector3 worldPivotAxis = leverMesh.TransformDirection(pivotAxis).normalized;
-        Vector3 worldAxisA = leverMesh.TransformDirection(dragPlaneAxis).normalized;
+        Vector3 worldPivotAxis = objectMesh.TransformDirection(pivotAxis).normalized;
+        Vector3 worldAxisA = objectMesh.TransformDirection(dragPlaneAxis).normalized;
         Vector3 worldAxisB = Vector3.Cross(worldPivotAxis, worldAxisA).normalized;
-        Vector3 offset = point - leverMesh.position;
+        Vector3 offset = point - objectMesh.position;
         _grabbedA = Vector3.Dot(offset, worldAxisA);
         _grabbedB = Vector3.Dot(offset, worldAxisB);
 
@@ -79,21 +74,14 @@ public class LeverInteraction : DragInteractable
         _targetAngle = CurrentAngle;
     }
 
-    public override void OnInteractionEnd()
-    {
-        base.OnInteractionEnd();
-        if (leverMode == LeverMode.Snap)
-            _targetAngle = NearestSnapAngle(CurrentAngle);
-    }
-
     public override void OnInteractionDrag(Ray ray)
     {
         base.OnInteractionDrag(ray);
 
         if (!IsHeld || leverMode == LeverMode.Toggle) return;
 
-        Vector3 planeNormal = leverMesh.TransformDirection(pivotAxis).normalized;
-        Vector3 planeOrigin = leverMesh.position;
+        Vector3 planeNormal = objectMesh.TransformDirection(pivotAxis).normalized;
+        Vector3 planeOrigin = objectMesh.position;
 
         float denom = Vector3.Dot(ray.direction, planeNormal);
         if (Mathf.Abs(denom) < 1e-5f) return; 
@@ -103,10 +91,10 @@ public class LeverInteraction : DragInteractable
 
         Vector3 mouseWorldPoint = ray.origin + ray.direction * t;
 
-        Vector3 worldAxisA = leverMesh.TransformDirection(dragPlaneAxis).normalized;
+        Vector3 worldAxisA = objectMesh.TransformDirection(dragPlaneAxis).normalized;
         Vector3 worldAxisB = Vector3.Cross(planeNormal, worldAxisA).normalized; 
 
-        Vector3 hitOffset = mouseWorldPoint - leverMesh.position;
+        Vector3 hitOffset = mouseWorldPoint - objectMesh.position;
         float mouseA = Vector3.Dot(hitOffset, worldAxisA);
         float mouseB = Vector3.Dot(hitOffset, worldAxisB);
 
@@ -114,7 +102,7 @@ public class LeverInteraction : DragInteractable
 
         float mouseAngle = Mathf.Atan2(mouseB, mouseA) * Mathf.Rad2Deg;
         float grabAngle = Mathf.Atan2(_grabbedB, _grabbedA) * Mathf.Rad2Deg;
-        float delta = Mathf.DeltaAngle(grabAngle, mouseAngle);
+        float delta = Mathf.DeltaAngle(grabAngle, mouseAngle) * sensitivity;
 
         float desiredAngle = _angleAtGrab + delta;
         _targetAngle = Mathf.Clamp(desiredAngle, -maxRotation, maxRotation);
@@ -126,6 +114,13 @@ public class LeverInteraction : DragInteractable
             onValueChanged?.Invoke(NormalizedValue);
         }
         Debug.Log($"Rotate from {CurrentAngle - delta} by {delta} degrees to {CurrentAngle}");
+    }
+
+    public override void OnInteractionEnd()
+    {
+        base.OnInteractionEnd();
+        if (leverMode == LeverMode.Snap)
+            _targetAngle = NearestSnapAngle(CurrentAngle);
     }
 
     private void AnimateToTarget()
@@ -171,9 +166,9 @@ public class LeverInteraction : DragInteractable
         _atMaxLast = atMax;
     }
 
-    private void ApplyVisualRotation()
+    public override void ApplyVisualRotation()
     {
-        leverMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, pivotAxis);
+        objectMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, pivotAxis);
     }
 
     public void SetValue(float normalizedValue)
@@ -195,19 +190,19 @@ public class LeverInteraction : DragInteractable
 
     private void OnDrawGizmosSelected()
     {
-        if (leverMesh == null) return;
+        if (objectMesh == null) return;
 
         Gizmos.color = Color.yellow;
-        Vector3 worldPivot = leverMesh.TransformDirection(pivotAxis).normalized;
-        Gizmos.DrawLine(leverMesh.position - worldPivot * 0.2f,
-                        leverMesh.position + worldPivot * 0.2f);
+        Vector3 worldPivot = objectMesh.TransformDirection(pivotAxis).normalized;
+        Gizmos.DrawLine(objectMesh.position - worldPivot * 0.2f,
+                        objectMesh.position + worldPivot * 0.2f);
 
         Gizmos.color = Color.cyan;
-        Vector3 worldDrag = leverMesh.TransformDirection(dragPlaneAxis).normalized;
-        Gizmos.DrawLine(leverMesh.position, leverMesh.position + worldDrag * grabSampleRadius);
-        Gizmos.DrawSphere(leverMesh.position + worldDrag * grabSampleRadius, 0.015f);
+        Vector3 worldDrag = objectMesh.TransformDirection(dragPlaneAxis).normalized;
+        Gizmos.DrawLine(objectMesh.position, objectMesh.position + worldDrag * grabSampleRadius);
+        Gizmos.DrawSphere(objectMesh.position + worldDrag * grabSampleRadius, 0.015f);
 
         Gizmos.color = new Color(1f, 0.3f, 0.3f, 0.4f);
-        Gizmos.DrawWireSphere(leverMesh.position, minGrabRadius);
+        Gizmos.DrawWireSphere(objectMesh.position, minGrabRadius);
     }
 }

@@ -281,10 +281,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.5000001
-  m_Height: 2
+  m_Radius: 0.5
+  m_Height: 1
   m_Direction: 1
-  m_Center: {x: 0.000000059604645, y: 0, z: -0.00000008940697}
+  m_Center: {x: 0, y: 0.5, z: 0}
 --- !u!54 &1917955209261602696
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -324,18 +324,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c59aa3a6f6abf0b4e80d709c9b668fdf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  leverMesh: {fileID: 6802613115025235117}
-  pivotAxis: {x: 1, y: 0, z: 0}
-  dragPlaneAxis: {x: 0, y: 1, z: 0}
-  minAngle: -60
-  maxAngle: 60
-  startAngle: 0
-  grabSampleRadius: 0.2
-  minGrabRadius: 0.02
-  leverMode: 1
-  snapPositions: 3
-  snapSpeed: 180
-  onLeverChanged:
+  objectMesh: {fileID: 0}
+  onValueChanged:
     m_PersistentCalls:
       m_Calls: []
   onMinReached:
@@ -344,3 +334,12 @@ MonoBehaviour:
   onMaxReached:
     m_PersistentCalls:
       m_Calls: []
+  minGrabRadius: 0.02
+  startRotation: 0
+  maxRotation: 45
+  snapSpeed: 30
+  pivotAxis: {x: 1, y: 0, z: 0}
+  dragPlaneAxis: {x: 0, y: 1, z: 0}
+  grabSampleRadius: 0.2
+  leverMode: 1
+  snapPositions: 3

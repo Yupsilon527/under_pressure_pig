@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Events;
 
 
 public class SteeringWheelInteraction : DragInteractable
@@ -7,18 +6,14 @@ public class SteeringWheelInteraction : DragInteractable
     public enum WheelMode { Drive, Valve, Free }
 
 
-    public Vector3 wheelNormal = Vector3.forward;
-
-    public float minGrabRadius = 0.05f;
-
     public WheelMode wheelMode = WheelMode.Drive;
 
 
 
     public float valveTurns = 3f;
-   
 
-    
+
+
     public float NormalizedValue
     {
         get
@@ -34,7 +29,6 @@ public class SteeringWheelInteraction : DragInteractable
 
     private Vector2 _grabbedLocalDir;
 
-    private float _angleAtGrab;
 
     private void Awake()
     {
@@ -53,20 +47,35 @@ public class SteeringWheelInteraction : DragInteractable
         ApplyVisualRotation();
     }
 
+    public bool Asd(Vector3 point, bool begin)
+    {
+        Vector2 localDir = WorldPointToWheelLocal(point);
+
+        if (localDir.magnitude < minGrabRadius)
+        {
+            Debug.Log("[SteeringWheel] Grab point too close to centre — ignored.");
+            if (begin)
+            {
+                _grabbedLocalDir = Rotate2D(localDir.normalized, -CurrentAngle);
+                _angleAtGrab = CurrentAngle;
+            }
+            else
+            {
+                localDir = localDir.normalized;
+                Vector2 mouseInRestFrame = Rotate2D(localDir, -_angleAtGrab);
+                float delta = Vector2.SignedAngle(_grabbedLocalDir, mouseInRestFrame);
+                float desired = _angleAtGrab - delta;
+                SetAngle(ApplyModeClamp(desired));
+            }
+            return true;
+        }
+        return false;
+    }
+
     public override void OnInteractionBegin(Vector3 point)
     {
         base.OnInteractionBegin(point);
-
-        Vector2 rawLocalDir = WorldPointToWheelLocal(point);
-
-        if (rawLocalDir.magnitude < minGrabRadius)
-        {
-            Debug.Log("[SteeringWheel] Grab point too close to centre — ignored.");
-            return;
-        }
-
-        _grabbedLocalDir = Rotate2D(rawLocalDir.normalized, -CurrentAngle);
-        _angleAtGrab = CurrentAngle;
+        Asd(point, true);
     }
 
     public override void OnInteractionDrag(Ray ray)
@@ -78,23 +87,19 @@ public class SteeringWheelInteraction : DragInteractable
         if (!RaycastWheelPlane(ray, out Vector3 mouseWorldPoint))
             return;
 
-        Vector2 mouseLocalDir = WorldPointToWheelLocal(mouseWorldPoint);
-
-        if (mouseLocalDir.magnitude < minGrabRadius)
-            return;
-
-        mouseLocalDir = mouseLocalDir.normalized;
-
-        Vector2 mouseInRestFrame = Rotate2D(mouseLocalDir, -_angleAtGrab);
-        float delta = Vector2.SignedAngle(_grabbedLocalDir, mouseInRestFrame);
-        float desired = _angleAtGrab - delta;
-
         float prev = CurrentAngle;
-        CurrentAngle = ApplyModeClamp(desired);
-
-        if (!Mathf.Approximately(CurrentAngle, prev))
-            onValueChanged?.Invoke(NormalizedValue);
+        if (Asd(mouseWorldPoint, false))
+        {
+            if (!Mathf.Approximately(CurrentAngle, prev))
+                onValueChanged?.Invoke(NormalizedValue);
+        }
     }
+    public override void OnInteractionEnd()
+    {
+        base.OnInteractionEnd();
+        _angleAtGrab = 0;
+    }
+
 
     private float ApplyModeClamp(float angle)
     {
@@ -115,9 +120,9 @@ public class SteeringWheelInteraction : DragInteractable
             onValueChanged?.Invoke(NormalizedValue);
     }
 
-    private void ApplyVisualRotation()
+    public override void ApplyVisualRotation()
     {
-        objectMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, wheelNormal);
+        objectMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, pivotAxis);
     }
 
     public void SetNormalizedValue(float t)
@@ -141,9 +146,9 @@ public class SteeringWheelInteraction : DragInteractable
     {
         switch (wheelMode)
         {
-            case WheelMode.Drive: return Mathf.Lerp(min, max, NormalizedValue * 0.5f + 0.5f); 
+            case WheelMode.Drive: return Mathf.Lerp(min, max, NormalizedValue * 0.5f + 0.5f);
             case WheelMode.Valve: return Mathf.Lerp(min, max, NormalizedValue);
-            default: return Mathf.Lerp(min, max, CurrentAngle);                  
+            default: return Mathf.Lerp(min, max, CurrentAngle);
         }
     }
 
@@ -157,7 +162,7 @@ public class SteeringWheelInteraction : DragInteractable
     {
         hitPoint = Vector3.zero;
 
-        Vector3 planeNormal = objectMesh.TransformDirection(wheelNormal).normalized;
+        Vector3 planeNormal = objectMesh.TransformDirection(pivotAxis).normalized;
         Vector3 planeOrigin = objectMesh.position;
 
         float denom = Vector3.Dot(ray.direction, planeNormal);
@@ -193,7 +198,7 @@ public class SteeringWheelInteraction : DragInteractable
         if (objectMesh == null) return;
 
         Gizmos.color = Color.yellow;
-        Vector3 faceDir = objectMesh.TransformDirection(wheelNormal).normalized;
+        Vector3 faceDir = objectMesh.TransformDirection(pivotAxis).normalized;
         Gizmos.DrawLine(objectMesh.position, objectMesh.position + faceDir * 0.35f);
         Gizmos.DrawSphere(objectMesh.position + faceDir * 0.35f, 0.02f);
 

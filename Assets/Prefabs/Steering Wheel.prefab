@@ -434,16 +434,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2ae6b1943f58294882d8c5fe3abd8e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wheelMesh: {fileID: 6802613115025235117}
-  wheelNormal: {x: 0, y: -1, z: 0}
-  minGrabRadius: 0.05
-  wheelMode: 0
-  maxRotation: 450
-  returnSpeed: 300
-  valveTurns: 3
+  objectMesh: {fileID: 0}
   onValueChanged:
     m_PersistentCalls:
       m_Calls: []
+  onMinReached:
+    m_PersistentCalls:
+      m_Calls: []
+  onMaxReached:
+    m_PersistentCalls:
+      m_Calls: []
+  minGrabRadius: 0.05
+  startRotation: 0
+  maxRotation: 450
+  snapSpeed: 300
+  pivotAxis: {x: 0, y: 1, z: 0}
+  realAngle: 0
+  wheelMode: 0
+  valveTurns: 3
 --- !u!1 &8253947784615210629
 GameObject:
   m_ObjectHideFlags: 0
