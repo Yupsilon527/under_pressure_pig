@@ -1,18 +1,11 @@
 using UnityEngine;
 
-
 public class SteeringWheelInteraction : DragInteractable
 {
     public enum WheelMode { Drive, Valve, Free }
 
-
     public WheelMode wheelMode = WheelMode.Drive;
-
-
-
     public float valveTurns = 3f;
-
-
 
     public float NormalizedValue
     {
@@ -22,13 +15,20 @@ public class SteeringWheelInteraction : DragInteractable
             {
                 case WheelMode.Drive: return Mathf.Clamp(CurrentAngle / maxRotation, -1f, 1f);
                 case WheelMode.Valve: return Mathf.Clamp01(CurrentAngle / (valveTurns * 360f));
-                default: return CurrentAngle; // Free — caller decides meaning
+                default: return CurrentAngle;
             }
         }
     }
 
-    private Vector2 _grabbedLocalDir;
+    // Stable world-space axes captured at grab time.
+    // We CANNOT use objectMesh.right/up — they rotate with CurrentAngle every frame
+    // via ApplyVisualRotation, corrupting the 2D projection and causing hyperspin.
+    private Vector3 _planeRight;
+    private Vector3 _planeUp;
 
+    // Last frame's mouse direction in the stable plane frame.
+    // We diff consecutive frames so rotation accumulates freely beyond ±180°.
+    private Vector2 _lastMouseDir;
 
     private void Awake()
     {
@@ -47,35 +47,29 @@ public class SteeringWheelInteraction : DragInteractable
         ApplyVisualRotation();
     }
 
-    public bool Asd(Vector3 point, bool begin)
-    {
-        Vector2 localDir = WorldPointToWheelLocal(point);
-
-        if (localDir.magnitude < minGrabRadius)
-        {
-            Debug.Log("[SteeringWheel] Grab point too close to centre — ignored.");
-            if (begin)
-            {
-                _grabbedLocalDir = Rotate2D(localDir.normalized, -CurrentAngle);
-                _angleAtGrab = CurrentAngle;
-            }
-            else
-            {
-                localDir = localDir.normalized;
-                Vector2 mouseInRestFrame = Rotate2D(localDir, -_angleAtGrab);
-                float delta = Vector2.SignedAngle(_grabbedLocalDir, mouseInRestFrame);
-                float desired = _angleAtGrab - delta;
-                SetAngle(ApplyModeClamp(desired));
-            }
-            return true;
-        }
-        return false;
-    }
-
     public override void OnInteractionBegin(Vector3 point)
     {
         base.OnInteractionBegin(point);
-        Asd(point, true);
+
+        // Build stable plane axes from the PARENT transform so they don't spin with objectMesh.
+        // If there's no parent, fall back to world space.
+        Transform reference = objectMesh.parent != null ? objectMesh.parent : objectMesh;
+        Vector3 normal = reference.TransformDirection(pivotAxis).normalized;
+
+        _planeRight = Vector3.Cross(Vector3.up, normal).normalized;
+        if (_planeRight.sqrMagnitude < 0.01f)           // degenerate when normal ≈ world up
+            _planeRight = Vector3.Cross(Vector3.right, normal).normalized;
+        _planeUp = Vector3.Cross(normal, _planeRight).normalized;
+
+        // Record the initial mouse direction in the stable frame.
+        Vector2 rawLocalDir = WorldPointToWheelLocal(point);
+        if (rawLocalDir.magnitude < minGrabRadius)
+        {
+            Debug.Log("[SteeringWheel] Grab point too close to centre — ignored.");
+            return;
+        }
+
+        _lastMouseDir = rawLocalDir.normalized;
     }
 
     public override void OnInteractionDrag(Ray ray)
@@ -83,23 +77,32 @@ public class SteeringWheelInteraction : DragInteractable
         base.OnInteractionDrag(ray);
 
         if (!IsHeld) return;
+        if (!RaycastWheelPlane(ray, out Vector3 mouseWorldPoint)) return;
 
-        if (!RaycastWheelPlane(ray, out Vector3 mouseWorldPoint))
-            return;
+        Vector2 mouseLocalDir = WorldPointToWheelLocal(mouseWorldPoint);
+        if (mouseLocalDir.magnitude < minGrabRadius) return;
+
+        mouseLocalDir = mouseLocalDir.normalized;
+
+        // Incremental signed angle from last frame to this frame.
+        // SignedAngle returns [-180, 180] which is fine for per-frame deltas —
+        // the mouse can't realistically move >180° in one frame.
+        // We ACCUMULATE into CurrentAngle so there's no wrap limit.
+        float delta = Vector2.SignedAngle(_lastMouseDir, mouseLocalDir);
+        _lastMouseDir = mouseLocalDir;   // advance for next frame
 
         float prev = CurrentAngle;
-        if (Asd(mouseWorldPoint, false))
-        {
-            if (!Mathf.Approximately(CurrentAngle, prev))
-                onValueChanged?.Invoke(NormalizedValue);
-        }
+        CurrentAngle = ApplyModeClamp(CurrentAngle + delta);
+
+        if (!Mathf.Approximately(CurrentAngle, prev))
+            onValueChanged?.Invoke(NormalizedValue);
     }
+
     public override void OnInteractionEnd()
     {
         base.OnInteractionEnd();
-        _angleAtGrab = 0;
+        // Nothing extra needed — _lastMouseDir is re-initialised on the next grab.
     }
-
 
     private float ApplyModeClamp(float angle)
     {
@@ -107,7 +110,7 @@ public class SteeringWheelInteraction : DragInteractable
         {
             case WheelMode.Drive: return Mathf.Clamp(angle, -maxRotation, maxRotation);
             case WheelMode.Valve: return Mathf.Clamp(angle, 0f, valveTurns * 360f);
-            default: return angle; // Free — no clamp
+            default: return angle;
         }
     }
 
@@ -161,15 +164,14 @@ public class SteeringWheelInteraction : DragInteractable
     private bool RaycastWheelPlane(Ray ray, out Vector3 hitPoint)
     {
         hitPoint = Vector3.zero;
-
-        Vector3 planeNormal = objectMesh.TransformDirection(pivotAxis).normalized;
+        Vector3 planeNormal = Vector3.Cross(_planeRight, _planeUp).normalized;
         Vector3 planeOrigin = objectMesh.position;
 
         float denom = Vector3.Dot(ray.direction, planeNormal);
-        if (Mathf.Abs(denom) < 1e-5f) return false; // Parallel — no intersection.
+        if (Mathf.Abs(denom) < 1e-5f) return false;
 
         float t = Vector3.Dot(planeOrigin - ray.origin, planeNormal) / denom;
-        if (t < 0f) return false; // Plane is behind the camera.
+        if (t < 0f) return false;
 
         hitPoint = ray.origin + ray.direction * t;
         return true;
@@ -179,18 +181,9 @@ public class SteeringWheelInteraction : DragInteractable
     {
         Vector3 offset = worldPoint - objectMesh.position;
         return new Vector2(
-            Vector3.Dot(offset, objectMesh.right),
-            Vector3.Dot(offset, objectMesh.up)
+            Vector3.Dot(offset, _planeRight),
+            Vector3.Dot(offset, _planeUp)
         );
-    }
-
-    private static Vector2 Rotate2D(Vector2 v, float degrees)
-    {
-        float rad = degrees * Mathf.Deg2Rad;
-        float cos = Mathf.Cos(rad);
-        float sin = Mathf.Sin(rad);
-        return new Vector2(cos * v.x - sin * v.y,
-                           sin * v.x + cos * v.y);
     }
 
     private void OnDrawGizmosSelected()
