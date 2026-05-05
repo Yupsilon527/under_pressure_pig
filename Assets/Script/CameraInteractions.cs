@@ -21,7 +21,7 @@ public class CameraInteractions : MonoBehaviour
         }
     }
 #endif
-    void Update()
+    void FixedUpdate()
     {
         if (fireRay && interactable == null)
             FindInteractable();

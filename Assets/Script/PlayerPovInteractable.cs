@@ -1,7 +1,14 @@
 using UnityEngine;
+using UnityEngine.Events;
 
 public abstract class PlayerPovInteractable : MonoBehaviour
 {
+    public Transform objectMesh;
+    public bool IsHeld { get; protected set; }
+
+    public UnityEvent<float> onValueChanged;
+    public UnityEvent onMinReached;
+    public UnityEvent onMaxReached;
     public virtual void OnInteractionBegin(Vector3 point)
     {
         Debug.Log($"Player interacts with {name}");

@@ -1,23 +1,11 @@
 using UnityEngine;
 using UnityEngine.Events;
 
-/// <summary>
-/// First-Person Steering Wheel — Grab-Point Tracking with three modes.
-///
-/// Modes:
-///   Drive  — clamped ±maxRotation, springs back to centre on release (steering wheel).
-///   Valve  — clamped 0–valveTurns full rotations, no spring (tap / pipe valve).
-///   Free   — unclamped, spins endlessly, no spring (ship's wheel, combination lock).
-///
-/// Interaction:
-///   On click the exact rim point is recorded. Each drag frame the camera ray is projected
-///   onto the wheel's face plane; the wheel rotates so the grabbed point follows the mouse.
-/// </summary>
-public class SteeringWheelInteraction : PlayerPovInteractable
+
+public class SteeringWheelInteraction : DragInteractable
 {
     public enum WheelMode { Drive, Valve, Free }
 
-    public Transform wheelMesh;
 
     public Vector3 wheelNormal = Vector3.forward;
 
@@ -25,16 +13,10 @@ public class SteeringWheelInteraction : PlayerPovInteractable
 
     public WheelMode wheelMode = WheelMode.Drive;
 
-    public float maxRotation = 450f;
 
-    public float returnSpeed = 90f;
 
     public float valveTurns = 3f;
-
-    public UnityEvent<float> onValueChanged;
-
    
-    public float CurrentAngle { get; private set; }
 
     
     public float NormalizedValue
@@ -50,22 +32,20 @@ public class SteeringWheelInteraction : PlayerPovInteractable
         }
     }
 
-    public bool IsHeld { get; private set; }
-
     private Vector2 _grabbedLocalDir;
 
     private float _angleAtGrab;
 
     private void Awake()
     {
-        if (wheelMesh == null)
-            wheelMesh = transform;
+        if (objectMesh == null)
+            objectMesh = transform;
 
         if (GetComponent<Collider>() == null)
             Debug.LogWarning("[SteeringWheel] No Collider — add one so the raycast can detect it.", this);
     }
 
-    private void Update()
+    private void FixedUpdate()
     {
         if (!IsHeld && wheelMode == WheelMode.Drive)
             HandleSpringReturn();
@@ -87,13 +67,6 @@ public class SteeringWheelInteraction : PlayerPovInteractable
 
         _grabbedLocalDir = Rotate2D(rawLocalDir.normalized, -CurrentAngle);
         _angleAtGrab = CurrentAngle;
-        IsHeld = true;
-    }
-
-    public override void OnInteractionEnd()
-    {
-        base.OnInteractionEnd();
-        IsHeld = false;
     }
 
     public override void OnInteractionDrag(Ray ray)
@@ -135,16 +108,16 @@ public class SteeringWheelInteraction : PlayerPovInteractable
 
     private void HandleSpringReturn()
     {
-        if (returnSpeed <= 0f || Mathf.Approximately(CurrentAngle, 0f)) return;
+        if (snapSpeed <= 0f || Mathf.Approximately(CurrentAngle, 0f)) return;
         float prev = CurrentAngle;
-        CurrentAngle = Mathf.MoveTowards(CurrentAngle, 0f, returnSpeed * Time.deltaTime);
+        CurrentAngle = Mathf.MoveTowards(CurrentAngle, 0f, snapSpeed * Time.deltaTime);
         if (!Mathf.Approximately(CurrentAngle, prev))
             onValueChanged?.Invoke(NormalizedValue);
     }
 
     private void ApplyVisualRotation()
     {
-        wheelMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, wheelNormal);
+        objectMesh.localRotation = Quaternion.AngleAxis(CurrentAngle, wheelNormal);
     }
 
     public void SetNormalizedValue(float t)
@@ -184,8 +157,8 @@ public class SteeringWheelInteraction : PlayerPovInteractable
     {
         hitPoint = Vector3.zero;
 
-        Vector3 planeNormal = wheelMesh.TransformDirection(wheelNormal).normalized;
-        Vector3 planeOrigin = wheelMesh.position;
+        Vector3 planeNormal = objectMesh.TransformDirection(wheelNormal).normalized;
+        Vector3 planeOrigin = objectMesh.position;
 
         float denom = Vector3.Dot(ray.direction, planeNormal);
         if (Mathf.Abs(denom) < 1e-5f) return false; // Parallel — no intersection.
@@ -199,10 +172,10 @@ public class SteeringWheelInteraction : PlayerPovInteractable
 
     private Vector2 WorldPointToWheelLocal(Vector3 worldPoint)
     {
-        Vector3 offset = worldPoint - wheelMesh.position;
+        Vector3 offset = worldPoint - objectMesh.position;
         return new Vector2(
-            Vector3.Dot(offset, wheelMesh.right),
-            Vector3.Dot(offset, wheelMesh.up)
+            Vector3.Dot(offset, objectMesh.right),
+            Vector3.Dot(offset, objectMesh.up)
         );
     }
 
@@ -217,14 +190,14 @@ public class SteeringWheelInteraction : PlayerPovInteractable
 
     private void OnDrawGizmosSelected()
     {
-        if (wheelMesh == null) return;
+        if (objectMesh == null) return;
 
         Gizmos.color = Color.yellow;
-        Vector3 faceDir = wheelMesh.TransformDirection(wheelNormal).normalized;
-        Gizmos.DrawLine(wheelMesh.position, wheelMesh.position + faceDir * 0.35f);
-        Gizmos.DrawSphere(wheelMesh.position + faceDir * 0.35f, 0.02f);
+        Vector3 faceDir = objectMesh.TransformDirection(wheelNormal).normalized;
+        Gizmos.DrawLine(objectMesh.position, objectMesh.position + faceDir * 0.35f);
+        Gizmos.DrawSphere(objectMesh.position + faceDir * 0.35f, 0.02f);
 
         Gizmos.color = new Color(1f, 0.3f, 0.3f, 0.4f);
-        Gizmos.DrawWireSphere(wheelMesh.position, minGrabRadius);
+        Gizmos.DrawWireSphere(objectMesh.position, minGrabRadius);
     }
 }

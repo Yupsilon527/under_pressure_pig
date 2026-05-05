@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.Events;
 
-public class LeverInteraction : PlayerPovInteractable
+public class LeverInteraction : DragInteractable
 {
     public enum LeverMode { FreeSlide, Snap, Toggle }
 
@@ -11,11 +11,6 @@ public class LeverInteraction : PlayerPovInteractable
 
     public Vector3 dragPlaneAxis = Vector3.up;
 
-    public float minAngle = -45f;
-
-    public float maxAngle = 45f;
-
-    public float startAngle = 0f;
 
     public float grabSampleRadius = 0.2f;
 
@@ -25,15 +20,8 @@ public class LeverInteraction : PlayerPovInteractable
 
     [Min(2)] public int snapPositions = 3;
 
-    public float snapSpeed = 180f;
 
-    public UnityEvent<float> onLeverChanged;
-    public UnityEvent onMinReached;
-    public UnityEvent onMaxReached;
-
-    public float CurrentAngle { get; private set; }
-    public float NormalizedValue => Mathf.InverseLerp(minAngle, maxAngle, CurrentAngle);
-    public bool IsHeld { get; private set; }
+    public float NormalizedValue => Mathf.InverseLerp(-maxRotation, maxRotation, CurrentAngle);
 
     private float _targetAngle;
     private bool _atMinLast;
@@ -51,12 +39,12 @@ public class LeverInteraction : PlayerPovInteractable
         if (GetComponent<Collider>() == null)
             Debug.LogWarning("[LeverInteraction] No Collider — add one for raycast detection.", this);
 
-        CurrentAngle = Mathf.Clamp(startAngle, minAngle, maxAngle);
+        CurrentAngle = Mathf.Clamp(startRotation, -maxRotation, maxRotation);
         _targetAngle = CurrentAngle;
         ApplyVisualRotation();
     }
 
-    private void Update()
+    private void FixedUpdate()
     {
         AnimateToTarget();
         ApplyVisualRotation();
@@ -69,8 +57,8 @@ public class LeverInteraction : PlayerPovInteractable
 
         if (leverMode == LeverMode.Toggle)
         {
-            _targetAngle = Mathf.Approximately(_targetAngle, maxAngle) ? minAngle : maxAngle;
-            onLeverChanged?.Invoke(NormalizedValue);
+            _targetAngle = Mathf.Approximately(_targetAngle, maxRotation) ? -maxRotation : maxRotation;
+            onValueChanged?.Invoke(NormalizedValue);
             return;
         }
 
@@ -89,14 +77,11 @@ public class LeverInteraction : PlayerPovInteractable
 
         _angleAtGrab = CurrentAngle;
         _targetAngle = CurrentAngle;
-        IsHeld = true;
     }
 
     public override void OnInteractionEnd()
     {
         base.OnInteractionEnd();
-        IsHeld = false;
-
         if (leverMode == LeverMode.Snap)
             _targetAngle = NearestSnapAngle(CurrentAngle);
     }
@@ -132,13 +117,13 @@ public class LeverInteraction : PlayerPovInteractable
         float delta = Mathf.DeltaAngle(grabAngle, mouseAngle);
 
         float desiredAngle = _angleAtGrab + delta;
-        _targetAngle = Mathf.Clamp(desiredAngle, minAngle, maxAngle);
+        _targetAngle = Mathf.Clamp(desiredAngle, -maxRotation, maxRotation);
 
 
         if (leverMode == LeverMode.FreeSlide)
         {
             CurrentAngle = _targetAngle;
-            onLeverChanged?.Invoke(NormalizedValue);
+            onValueChanged?.Invoke(NormalizedValue);
         }
         Debug.Log($"Rotate from {CurrentAngle - delta} by {delta} degrees to {CurrentAngle}");
     }
@@ -157,17 +142,17 @@ public class LeverInteraction : PlayerPovInteractable
         CurrentAngle = Mathf.MoveTowards(CurrentAngle, _targetAngle, snapSpeed * Time.deltaTime);
 
         if (!Mathf.Approximately(CurrentAngle, prev))
-            onLeverChanged?.Invoke(NormalizedValue);
+            onValueChanged?.Invoke(NormalizedValue);
     }
 
     private float NearestSnapAngle(float angle)
     {
-        float best = minAngle;
-        float bestDist = Mathf.Abs(angle - minAngle);
+        float best = -maxRotation;
+        float bestDist = Mathf.Abs(angle - -maxRotation);
 
         for (int i = 0; i < snapPositions; i++)
         {
-            float candidate = Mathf.Lerp(minAngle, maxAngle, (float)i / (snapPositions - 1));
+            float candidate = Mathf.Lerp(-maxRotation, maxRotation, (float)i / (snapPositions - 1));
             float dist = Mathf.Abs(angle - candidate);
             if (dist < bestDist) { bestDist = dist; best = candidate; }
         }
@@ -176,8 +161,8 @@ public class LeverInteraction : PlayerPovInteractable
 
     private void FireEdgeEvents()
     {
-        bool atMin = Mathf.Approximately(CurrentAngle, minAngle);
-        bool atMax = Mathf.Approximately(CurrentAngle, maxAngle);
+        bool atMin = Mathf.Approximately(CurrentAngle, -maxRotation);
+        bool atMax = Mathf.Approximately(CurrentAngle, maxRotation);
 
         if (atMin && !_atMinLast) onMinReached?.Invoke();
         if (atMax && !_atMaxLast) onMaxReached?.Invoke();
@@ -193,7 +178,7 @@ public class LeverInteraction : PlayerPovInteractable
 
     public void SetValue(float normalizedValue)
     {
-        float angle = Mathf.Lerp(minAngle, maxAngle, Mathf.Clamp01(normalizedValue));
+        float angle = Mathf.Lerp(-maxRotation, maxRotation, Mathf.Clamp01(normalizedValue));
         _targetAngle = leverMode == LeverMode.Snap ? NearestSnapAngle(angle) : angle;
     }
 
