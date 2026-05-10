@@ -167,7 +167,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0.5, y: -0, z: -0, w: 0.8660254}
   m_LocalPosition: {x: 0.013392046, y: 0.70799994, z: 0.11792278}
-  m_LocalScale: {x: 1.2, y: 0.09999999, z: 1.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6802613115025235117}
@@ -312,7 +312,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 1.2, y: 0.09999999, z: 1.2}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 8756935343784891027}
@@ -449,7 +449,6 @@ MonoBehaviour:
   maxRotation: 450
   snapSpeed: 300
   pivotAxis: {x: 0, y: 1, z: 0}
-  realAngle: 0
   wheelMode: 0
   valveTurns: 3
 --- !u!1 &8253947784615210629
